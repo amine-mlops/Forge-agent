@@ -2,3 +2,4 @@ langchain
 langchain-openrouter
 langchain-tavily
 python-dotenv
+playwright

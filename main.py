@@ -1,161 +1,65 @@
-import os 
-from pathlib import Path
-from langchain.tools import tool
+import os
 from dotenv import load_dotenv
-from langchain.agents import create_agent
-from langchain_tavily import TavilySearch
-
-# 1. Load environment variables
-
 load_dotenv()
 
-if not os.getenv("OPENROUTER_API_KEY"):
-    raise ValueError("OPENROUTER_API_KEY")
+from langchain.agents import create_agent
+ 
 
-if not os.getenv("TAVILY_API_KEY"):
-    raise ValueError("TAVILY_API_KEY is not set in .env")
-
-# 2. Agent workspace
-
-WORKSPACE = Path("agent_workspace").resolve()
-WORKSPACE.mkdir(parents=True, exist_ok=True)
-
-# 3. Helper function to protect the workspace
-
-def safe_path(filename: str) -> Path:
-    """
-    convert a user-provided filename into a safe path
-    inside agent_workspace
-    """
-
-    file_path = (WORKSPACE / filename).resolve()
-
-    if WORKSPACE not in file_path.parents:
-        raise ValueError(
-            "Access denied: the agent can only access "
-            "files inside agent_workspace."
-        )
-
-    return file_path
-
-# 4. CREATE FILE TOOL
-
-@tool
-def create_file(filename:str, content: str) -> str:
-    """
-    Create a new text file inside agent_workspace.
-
-    Args:
-        filename: Name/path of the file to create.
-        content: Text content that should be written to the file.
-    """
-    try:
-        file_path = safe_path(filename)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(
-            content,
-            encoding="utf-8"
-        )
-        return f"File created successfully: {file_path.relative_to(WORKSPACE)}"
-    except Exception as e:
-        return f"Error creating file: {e}"
-
-# 5. READ FILE TOOL
-@tool
-def read_file(filename: str) -> str:
-    """
-    Read a text file from agent_workspace.
-
-    Args:
-        filename: Name/path of the file to read.
-    """
-
-    try:
-        file_path = safe_path(filename)
-        if not file_path.exists():
-            return f"File not found:{filename}"
-        if not file_path.is_file():
-            return f"{filename} is not a file."
-
-        return file_path.read_text(encoding="utf-8")
-
-    except Exception as e:
-        return f"Error reading file: {e}"
-
-# 6. LIST FILES TOOL
-
-@tool
-def list_file() -> str:
-    """
-    List all files and directories inside agent_workspace.
-    """
-
-    try:
-        items = []
-
-        for path in WORKSPACE.rglob("*"):
-
-            relative_path = path.relative_to(WORKSPACE)
-
-            if path.is_file():
-                items.append(f"FILE : {relative_path}")
-            elif path.is_dir():
-                items.append(f"DIR: {relative_path}")
-
-        if not items : 
-            return "The agent workspace is empty."
-
-        return "\n".join(items)
-
-    except Exception as e:
-        return f"Error listing files: {e}"
-
-# 7. WEB SEARCH TOOL
-
-search = TavilySearch(
-    max_result=5
+from tools.filesystem import(
+    create_file,
+    read_file,
+    list_file,
+    edit_file,
 )
-# 8. CREATE THE AGENT
+
+from tools.web import search
+
+from tools.browser import(
+    browser_open,
+    browser_read,
+    browser_click,
+    browser_type,
+    browser_screenshot,
+)
+
 
 agent = create_agent(
-    model="openrouter:openrouter/free",
+    model="openrouter:nvidia/nemotron-3.5-lightning:free",
+
     tools=[
         search,
+
         create_file,
         read_file,
         list_file,
+        edit_file,
+
+        browser_open,
+        browser_read,
+        browser_click,
+        browser_type,
+        browser_screenshot,
     ],
-    system_prompt= """
-You are a helpful AI research and coding assistant.
 
-You have access to the following tools:
+    system_prompt="""
+You are Forge, an AI research and coding assistant.
 
-1. Web search
-   - Use it when the user asks for current or external information.
+You have access to tools that you can actually execute.
 
-2. File creation
-   - You can create files inside agent_workspace.
+IMPORTANT:
 
-3. File reading
-   - You can read files inside agent_workspace.
-
-4. File listing
-   - You can list files inside agent_workspace.
-
-IMPORTANT RULES:
-
-- Always use the appropriate tool when the user asks you
-  to perform an action that requires it.
+- When the user asks you to perform an action using a tool,
+  USE THE TOOL.
+- Do NOT provide Python code as a substitute for executing a tool.
+- Do NOT pretend that an action was performed.
 - Only access files inside agent_workspace.
-- Never try to access files outside agent_workspace.
-- Never invent the result of a tool.
-- After using a tool, use its result to formulate your answer.
-- Be clear and concise.
+- Use browser tools for browser tasks.
+- Use filesystem tools for file tasks.
+- Use web search when internet research is required.
 
+After using the tools, provide a short summary of what you did.
 """
 )
-
-# 9. TEST THE AGENT
 
 result = agent.invoke(
     {
@@ -163,50 +67,57 @@ result = agent.invoke(
             {
                 "role": "user",
                 "content": """
-Search the web for the latest LangChain agent documentation.
+Open YouTube in the browser and search for "neural networks".
 
-Then create a file called:
+Then perform all of the following tasks:
 
-langchain_notes.md
+1. Read the YouTube search results.
+2. Identify the first 5 videos you can see.
+3. Give me the title and URL of each of the 5 videos.
+4. Take a screenshot of the YouTube search-results page after
+   searching for "neural networks".
+5. Save the screenshot inside agent_workspace as:
+   youtube_neural_networks.png
+6. Create a Markdown file inside agent_workspace called:
+   youtube_neural_networks.md
+7. Put the following information in the Markdown file:
+   - Search query
+   - YouTube search URL
+   - The first 5 video titles
+   - The URLs of the 5 videos
 
-inside the agent workspace.
-
-The file should contain a short summary of:
-- What an agent is
-- What tools are
-- How create_agent works
-- How tool calling works
+IMPORTANT:
+- Use the browser tools to actually open YouTube and perform the search.
+- Use the browser_read tool to inspect the results.
+- Use the browser_screenshot tool to create the screenshot.
+- Use the create_file tool to create the Markdown file.
+- Do not give me Python code instead of performing the actions.
+- Do not pretend that an action was performed if it wasn't.
+- Complete the actions using the available tools.
 """
             }
         ]
     }
 )
-
-# 10. DISPLAY THE AGENT'S MESSAGES
-
 print("\n" + "=" * 60)
-print("AGENT EXECUTION")
+print("FORGE EXECUTION")
 print("=" * 60)
 
 for message in result["messages"]:
-    print("\nTYPE:", message.type)
 
-    if hasattr(message, "content"):
-        print("CONTENT:", message.content)
+    print("\nMESSAGE TYPE:")
+    print(message.type)
+
+    print("\nCONTENT:")
+    print(message.content)
+
     if hasattr(message, "tool_calls") and message.tool_calls:
-        print("TOOL CALLS:", message.tool_calls)
+
+        print("\nTOOL CALLS:")
+        print(message.tool_calls)
 
     print("-" * 60)
 
-# 11. FINAL ANSWER
 
-print("\n" + "=" * 60)
-print("FINAL ANSWER")
-print("=" * 60)
-
+print("\nFINAL ANSWER:")
 print(result["messages"][-1].content)
-
-
-
-
-
