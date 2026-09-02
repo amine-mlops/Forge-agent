@@ -1,43 +1,115 @@
-from playwright.sync_api import sync_playwright
+from pathlib import Path
+
+from playwright.async_api import (
+    async_playwright,
+    Playwright,
+    Browser,
+    Page,
+)
+
 from langchain.tools import tool
 
-playwright = sync_playwright().start()
+# WORKSPACE
 
-browser = playwright.chromium.launch(
-    headless=False
-)
-page = browser.new_page()
+WORKSPACE = Path("agent_workspace").resolve()
+WORKSPACE.mkdir(parents=True, exist_ok=True)
+
+# BROWSER MANAGER
+
+class BrowserManager:
+    """
+    Manages one persistent Playwright browser and page.
+    """
+
+    def __init__(self):
+        self.playwright: Playwright | None = None
+        self.browser: Browser | None = None
+        self.page: Page | None = None
+
+    async def start(self):
+        """Start Playwright and the browser."""
+
+        if self.page is not None:
+            return self.page
+
+        self.playwright = await async_playwright().start()
+
+        self.browser = await self.playwright.chromium.launch(
+            executable_path="/usr/bin/brave",
+            headless=False
+        )
+
+        self.page = await self.browser.new_page()
+
+        return self.page
+
+    async def get_page(self):
+        """Return the persistent page."""
+
+        if self.page is None:
+            return await self.start()
+
+        return self.page
+
+    async def close(self):
+        """Close browser and Playwright."""
+
+        if self.browser is not None:
+            await self.browser.close()
+
+        if self.playwright is not None:
+            await self.playwright.stop()
+
+        self.page = None
+        self.browser = None
+        self.playwright = None
+
+# GLOBAL BROWSER MANAGER
+
+browser_manager = BrowserManager()
+
+# OPEN PAGE
+
 
 @tool
-def browser_open(url: str) -> str:
-    """Open a URL in a browser and return its title."""
+async def browser_open(url: str) -> str:
+    """
+    Open a URL in the persistent browser.
+    """
 
     try:
-        with sync_playwright() as playwright:
+        page = await browser_manager.get_page()
 
-            browser = playwright.chromium.launch(
-                headless=False
-            )
+        await page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
 
-            page = browser.new_page()
+        title = await page.title()
 
-            page.goto(url)
-
-            title = page.title()
-
-            browser.close()
-
-            return f"Opened: {url}\nTitle: {title}"
+        return (
+            f"Opened: {url}\n"
+            f"Title: {title}"
+        )
 
     except Exception as e:
-        return f"Browser error: {e}"
+        return f"Browser open error: {e}"
+
+
+# READ PAGE
+
 
 @tool
-def browser_read() -> str:
-    """Read the visible text of the current webpage."""
+async def browser_read() -> str:
+    """
+    Read visible text from the current webpage.
+    """
 
     try:
-        text = page.locator("body").inner_text()
+        page = await browser_manager.get_page()
+
+        text = await page.locator("body").inner_text()
 
         if len(text) > 12000:
             text = text[:12000] + "\n...[truncated]"
@@ -45,53 +117,76 @@ def browser_read() -> str:
         return text
 
     except Exception as e:
-        return f"Browser error:{e}"
+        return f"Browser read error: {e}"
+
+
+# CLICK
+
 
 @tool
-def browser_click(text: str) -> str:
-    """Click an element containing the specified text."""
+async def browser_click(text: str) -> str:
+    """
+    Click the first element containing the specified text.
+    """
 
     try:
-        page.get_by_text(
+        page = await browser_manager.get_page()
+
+        element = page.get_by_text(
             text,
             exact=False
-        ).first.click()
+        ).first
 
-        return f"Click: {text}"
+        await element.click()
+
+        return f"Clicked: {text}"
 
     except Exception as e:
-        return f"Click error: {e}"
+        return f"Browser click error: {e}"
+
+# TYPE
 
 @tool
-def browser_type(selector: str, text: str) -> str:
-    """Fill an input using a CSS selector."""
+async def browser_type(selector: str, text: str) -> str:
+    """
+    Fill an input using a CSS selector.
+    """
 
     try:
-        page.localor(selector).fill(text)
+        page = await browser_manager.get_page()
+
+        await page.locator(selector).fill(text)
 
         return f"Filled: {selector}"
 
     except Exception as e:
-        return f"Type error: {e}"
+        return f"Browser type error: {e}"
+
+# SCREENSHOT
 
 @tool
-def browser_screenshot(filename: str) -> str:
-    """Save a screenshot inside agent_workspace."""
+async def browser_screenshot(filename: str) -> str:
+    """
+    Save a full-page screenshot inside agent_workspace.
+    """
 
     try:
-        file_path = safe_path(filename)
+        page = await browser_manager.get_page()
 
-        page.screenshot(
+        # Prevent path traversal
+        filename = Path(filename).name
+
+        file_path = WORKSPACE / filename
+
+        await page.screenshot(
             path=str(file_path),
-            full_page=True
+            full_page=True,
         )
 
-        return (
-            f"Screenshot saved: "
-            f"{file_path.relative_to(WORKSPACE)}"
-        )
+        return f"Screenshot saved: {file_path}"
+
     except Exception as e:
-        return f"Screenshot error: {e}"
+        return f"Browser screenshot error: {e}"
 
 
 

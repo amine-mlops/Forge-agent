@@ -20,11 +20,12 @@ from tools.browser import(
     browser_click,
     browser_type,
     browser_screenshot,
+    browser_manager,
 )
 
 
 agent = create_agent(
-    model="openrouter:nvidia/nemotron-3.5-lightning:free",
+    model="openrouter:openrouter/free",
 
     tools=[
         search,
@@ -57,67 +58,58 @@ IMPORTANT:
 - Use filesystem tools for file tasks.
 - Use web search when internet research is required.
 
+When a browser task requires multiple actions, keep using
+the browser tools instead of switching to web search.
+
 After using the tools, provide a short summary of what you did.
 """
 )
 
-result = agent.invoke(
-    {
-        "messages": [
+import asyncio
+
+async def main():
+
+    try:
+
+        result = await agent.ainvoke(
             {
-                "role": "user",
-                "content": """
-Open YouTube in the browser and search for "neural networks".
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": """
+Open YouTube in the browser.
 
-Then perform all of the following tasks:
+Search for "Agentic AI".
 
-1. Read the YouTube search results.
-2. Identify the first 5 videos you can see.
-3. Give me the title and URL of each of the 5 videos.
-4. Take a screenshot of the YouTube search-results page after
-   searching for "neural networks".
-5. Save the screenshot inside agent_workspace as:
-   youtube_neural_networks.png
-6. Create a Markdown file inside agent_workspace called:
-   youtube_neural_networks.md
-7. Put the following information in the Markdown file:
-   - Search query
-   - YouTube search URL
-   - The first 5 video titles
-   - The URLs of the 5 videos
+Read the search results.
 
-IMPORTANT:
-- Use the browser tools to actually open YouTube and perform the search.
-- Use the browser_read tool to inspect the results.
-- Use the browser_screenshot tool to create the screenshot.
-- Use the create_file tool to create the Markdown file.
-- Do not give me Python code instead of performing the actions.
-- Do not pretend that an action was performed if it wasn't.
-- Complete the actions using the available tools.
+Take a full-page screenshot of the search results
+and save it as:
+
+youtube_Agentic_AI.png
+
+Then tell me the titles of the first 5 videos you can see.
+
+Use the browser tools to perform the task.
+Do not use Tavily instead of the browser.
 """
+                    }
+                ]
             }
-        ]
-    }
-)
-print("\n" + "=" * 60)
-print("FORGE EXECUTION")
-print("=" * 60)
+        )
 
-for message in result["messages"]:
+        print("\n" + "=" * 60)
+        print("FINAL ANSWER")
+        print("=" * 60)
 
-    print("\nMESSAGE TYPE:")
-    print(message.type)
+        print(
+            result["messages"][-1].content
+        )
 
-    print("\nCONTENT:")
-    print(message.content)
+    finally:
 
-    if hasattr(message, "tool_calls") and message.tool_calls:
-
-        print("\nTOOL CALLS:")
-        print(message.tool_calls)
-
-    print("-" * 60)
+        await browser_manager.close()
 
 
-print("\nFINAL ANSWER:")
-print(result["messages"][-1].content)
+if __name__ == "__main__":
+    asyncio.run(main())
