@@ -23,6 +23,8 @@ from tools.browser import(
     browser_manager,
 )
 
+from tools.terminal import terminal_run
+
 
 agent = create_agent(
     model="openrouter:openrouter/free",
@@ -40,6 +42,8 @@ agent = create_agent(
         browser_click,
         browser_type,
         browser_screenshot,
+
+        terminal_run,
     ],
 
     system_prompt="""
@@ -57,6 +61,9 @@ IMPORTANT:
 - Use browser tools for browser tasks.
 - Use filesystem tools for file tasks.
 - Use web search when internet research is required.
+- Use terminal_run for shell commands and code execution.
+- Terminal execution is sandboxed inside agent_workspace.
+- Never claim a command was executed unless the terminal tool returned a result.
 
 When a browser task requires multiple actions, keep using
 the browser tools instead of switching to web search.
@@ -77,21 +84,16 @@ async def main():
                     {
                         "role": "user",
                         "content": """
-Open YouTube in the browser.
+Create a Python file called fibonacci.py inside the workspace.
 
-Search for "Agentic AI".
+The program should calculate the first 20 Fibonacci numbers and print them.
 
-Read the search results.
+Then execute the Python program using the terminal tool.
 
-Take a full-page screenshot of the search results
-and save it as:
+Read the output and tell me the result.
 
-youtube_Agentic_AI.png
-
-Then tell me the titles of the first 5 videos you can see.
-
-Use the browser tools to perform the task.
-Do not use Tavily instead of the browser.
+You MUST use the filesystem and terminal tools to actually create and execute the file.
+Do not just give me the Python code.
 """
                     }
                 ]
