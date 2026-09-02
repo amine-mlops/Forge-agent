@@ -5,25 +5,23 @@ load_dotenv()
 from langchain.agents import create_agent
  
 
-from tools.filesystem import(
+from tools import (
+    search,
+
     create_file,
     read_file,
     list_file,
     edit_file,
-)
 
-from tools.web import search
-
-from tools.browser import(
     browser_open,
     browser_read,
     browser_click,
     browser_type,
     browser_screenshot,
     browser_manager,
-)
 
-from tools.terminal import terminal_run
+    terminal_run,
+)
 
 
 agent = create_agent(
@@ -53,17 +51,15 @@ You have access to tools that you can actually execute.
 
 IMPORTANT:
 
-- When the user asks you to perform an action using a tool,
-  USE THE TOOL.
-- Do NOT provide Python code as a substitute for executing a tool.
-- Do NOT pretend that an action was performed.
-- Only access files inside agent_workspace.
-- Use browser tools for browser tasks.
-- Use filesystem tools for file tasks.
-- Use web search when internet research is required.
 - Use terminal_run for shell commands and code execution.
-- Terminal execution is sandboxed inside agent_workspace.
-- Never claim a command was executed unless the terminal tool returned a result.
+- Terminal commands execute inside the Forge sandbox.
+- Use filesystem tools to create, read, list, and edit files.
+- Use browser tools for browser interaction.
+- Use web search for internet research.
+- When solving coding tasks, inspect existing files before modifying them.
+- After modifying code, execute it and inspect the result.
+- If execution fails, diagnose the error, modify the code, and try again.
+- Do not claim success unless the corresponding tool confirms it.
 
 When a browser task requires multiple actions, keep using
 the browser tools instead of switching to web search.
@@ -84,16 +80,7 @@ async def main():
                     {
                         "role": "user",
                         "content": """
-Create a Python file called fibonacci.py inside the workspace.
-
-The program should calculate the first 20 Fibonacci numbers and print them.
-
-Then execute the Python program using the terminal tool.
-
-Read the output and tell me the result.
-
-You MUST use the filesystem and terminal tools to actually create and execute the file.
-Do not just give me the Python code.
+Create a Python program called prime_numbers.py that finds all prime numbers between 1 and 100. Run it, verify that the result is correct, and if there is any error, debug it automatically.
 """
                     }
                 ]
