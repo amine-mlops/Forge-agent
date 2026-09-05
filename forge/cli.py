@@ -1,7 +1,9 @@
 import asyncio
 
 from forge.agent import create_forge_agent
+from forge.planner import create_planner, generate_plan
 from tools.browser import browser_manager
+
 
 # FORGE CLI
 
@@ -21,6 +23,7 @@ BANNER = r"""
 ╚══════════════════════════════════════════════════════════╝
 """
 
+# DISPLAY FUNCTIONS
 
 def print_banner():
     print(BANNER)
@@ -56,6 +59,7 @@ Workspace:  agent_workspace
 Browser:    Playwright + Brave
 Terminal:   Bubblewrap sandbox
 Web:        Tavily
+Planner:    Enabled
 Status:     ● Ready
 """)
 
@@ -78,8 +82,34 @@ Forge Tools
 """)
 
 
+def print_plan(plan):
+    """
+    Display the planner output in the Forge CLI.
+    """
+
+    print("┌─ Forge Plan ────────────────────────────────┐")
+
+    for line in plan.splitlines():
+
+        # Don't display the PLAN header inside the box
+        if line.strip() == "PLAN":
+            continue
+
+        if line.strip():
+            print(f"│ {line:<44} │")
+
+    print("└──────────────────────────────────────────────┘")
+    print()
+
+# AGENT EXECUTION
+
 async def run_agent(agent, user_input):
+    """
+    Send the user's request to the Forge execution agent.
+    """
+
     try:
+
         result = await agent.ainvoke(
             {
                 "messages": [
@@ -97,13 +127,21 @@ async def run_agent(agent, user_input):
         return f"Forge error: {e}"
 
 
+# MAIN CLI
+
 async def cli():
+
+    # Create the agents once when Forge starts
     agent = create_forge_agent()
+    planner = create_planner()
 
     print_banner()
 
     try:
+
         while True:
+
+            # Read user input
 
             try:
                 user_input = input("forge ❯ ").strip()
@@ -115,8 +153,8 @@ async def cli():
             if not user_input:
                 continue
 
-            # Commands
-            
+            # Built-in commands
+
             if user_input == "/exit":
                 print("\nGoodbye 👋")
                 break
@@ -138,18 +176,48 @@ async def cli():
                 print_banner()
                 continue
 
-            # Agent
+            # Planner + Agent
 
             print("\nForge is working...\n")
 
-            response = await run_agent(agent, user_input)
+            try:
 
-            print(response)
-            print()
+                # Step 1: Generate a plan
+                
+                plan = await generate_plan(
+                    planner,
+                    user_input,
+                )
+
+                # Step 2: Display the plan
+            
+                print_plan(plan)
+
+                print("Executing plan...\n")
+
+                # Step 3: Execute the task
+
+                response = await run_agent(
+                    agent,
+                    user_input,
+                )
+
+                # Step 4: Display final response
+
+                print(response)
+                print()
+
+            except Exception as e:
+                print(f"Forge error: {e}")
+                print()
 
     finally:
+
+        # Close persistent Brave browser
         await browser_manager.close()
 
+
+# ENTRY POINT
 
 if __name__ == "__main__":
     asyncio.run(cli())
