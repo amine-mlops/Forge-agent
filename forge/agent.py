@@ -32,7 +32,7 @@ def create_forge_agent():
     """
 
     agent = create_agent(
-        model="openrouter:openrouter/free",
+        model="openrouter:z-ai/glm-5.3-flash",
 
         tools=[
             search,

@@ -1,7 +1,9 @@
+
 import asyncio
 
 from forge.agent import create_forge_agent
 from forge.planner import create_planner, generate_plan
+from forge.executor import execute_plan
 from tools.browser import browser_manager
 
 
@@ -15,7 +17,7 @@ BANNER = r"""
 ║       █████╗  ██║   ██║██████╔╝██║  ███╗█████╗           ║
 ║       ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝           ║
 ║       ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗         ║
-║       ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚══════╝          ║
+║       ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝          ║
 ║                                                          ║
 ║             AI Coding & Research Agent                   ║
 ║                         Forge V2                         ║
@@ -23,11 +25,10 @@ BANNER = r"""
 ╚══════════════════════════════════════════════════════════╝
 """
 
-# DISPLAY FUNCTIONS
 
 def print_banner():
     print(BANNER)
-    print("  Model: OpenRouter / Free")
+    print("  Model: GLM 5.3 Flash")
     print("  Workspace: agent_workspace")
     print("  Status: ● Ready")
     print()
@@ -60,6 +61,7 @@ Browser:    Playwright + Brave
 Terminal:   Bubblewrap sandbox
 Web:        Tavily
 Planner:    Enabled
+Executor:   Enabled
 Status:     ● Ready
 """)
 
@@ -91,7 +93,6 @@ def print_plan(plan):
 
     for line in plan.splitlines():
 
-        # Don't display the PLAN header inside the box
         if line.strip() == "PLAN":
             continue
 
@@ -101,15 +102,15 @@ def print_plan(plan):
     print("└──────────────────────────────────────────────┘")
     print()
 
-# AGENT EXECUTION
 
 async def run_agent(agent, user_input):
     """
-    Send the user's request to the Forge execution agent.
+    Send a request directly to the Forge execution agent.
+
+    Used for simple tasks that don't require planning.
     """
 
     try:
-
         result = await agent.ainvoke(
             {
                 "messages": [
@@ -127,11 +128,9 @@ async def run_agent(agent, user_input):
         return f"Forge error: {e}"
 
 
-# MAIN CLI
-
 async def cli():
 
-    # Create the agents once when Forge starts
+    # Create Forge components
     agent = create_forge_agent()
     planner = create_planner()
 
@@ -140,8 +139,6 @@ async def cli():
     try:
 
         while True:
-
-            # Read user input
 
             try:
                 user_input = input("forge ❯ ").strip()
@@ -153,8 +150,9 @@ async def cli():
             if not user_input:
                 continue
 
-            # Built-in commands
-
+            
+            # CLI COMMANDS
+            
             if user_input == "/exit":
                 print("\nGoodbye 👋")
                 break
@@ -176,48 +174,76 @@ async def cli():
                 print_banner()
                 continue
 
-            # Planner + Agent
-
+            # PLANNING + EXECUTION
+            
             print("\nForge is working...\n")
 
             try:
 
-                # Step 1: Generate a plan
+                # Step 1: Generate plan
                 
                 plan = await generate_plan(
                     planner,
                     user_input,
                 )
 
-                # Step 2: Display the plan
-            
-                print_plan(plan)
+                # Simple task
+               
+                if plan == "SIMPLE":
 
-                print("Executing plan...\n")
+                    print("Simple task detected.\n")
 
-                # Step 3: Execute the task
+                    response = await run_agent(
+                        agent,
+                        user_input,
+                    )
 
-                response = await run_agent(
-                    agent,
-                    user_input,
-                )
+                    print(response)
+                    print()
 
-                # Step 4: Display final response
+                # Complex task
+                
+                else:
 
-                print(response)
-                print()
+                    # Display generated plan
+                    print_plan(plan)
+
+                    print("Executing plan...\n")
+
+                    # Execute every plan step
+                    results = await execute_plan(
+                        agent,
+                        plan,
+                        user_input,
+                    )
+
+                    # Execution summary
+                    
+                    print("\nForge execution summary")
+                    print("────────────────────────────")
+
+                    for result in results:
+
+                        print(
+                            f"\nStep {result['step']}: "
+                            f"{result['description']}"
+                        )
+
+                        print(result["result"])
+
+                    print()
 
             except Exception as e:
+
                 print(f"Forge error: {e}")
                 print()
 
     finally:
 
-        # Close persistent Brave browser
+        # Always close the persistent browser
         await browser_manager.close()
 
 
-# ENTRY POINT
-
 if __name__ == "__main__":
     asyncio.run(cli())
+
