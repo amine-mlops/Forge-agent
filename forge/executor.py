@@ -1,6 +1,19 @@
 import re
+from dataclasses import asdict, dataclass
 
 from forge.state import save_state
+
+
+@dataclass
+class StepResult:
+    step: int
+    description: str
+    status: str
+    output: str = ""
+    error: str | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 def parse_plan(plan: str) -> list[str]:
@@ -37,11 +50,14 @@ async def execute_plan(
             status="failed",
         )
 
-        return [{
-            "step": 0,
-            "description": "Plan parsing",
-            "result": "FAILED: The planner did not return a valid numbered execution plan.",
-        }]
+        return [
+            StepResult(
+                step=0,
+                description="Plan parsing",
+                status="failed",
+                error="The planner did not return a valid numbered execution plan.",
+            ).to_dict()
+        ]
 
     if completed_steps is None:
         completed_steps = []
@@ -73,9 +89,11 @@ async def execute_plan(
 You are executing Step {index} of a larger Forge task.
 
 Original user request:
+
 {original_request}
 
 Current plan step:
+
 {step}
 
 Instructions:
@@ -107,13 +125,14 @@ and what you verified.
 
             response = result["messages"][-1].content
 
-            results.append(
-                {
-                    "step": index,
-                    "description": step,
-                    "result": response,
-                }
+            step_result = StepResult(
+                step=index,
+                description=step,
+                status="success",
+                output=response,
             )
+
+            results.append(step_result.to_dict())
 
             completed_steps.append(index)
 
@@ -139,13 +158,14 @@ and what you verified.
                 status="paused",
             )
 
-            results.append(
-                {
-                    "step": index,
-                    "description": step,
-                    "result": f"FAILED: {e}",
-                }
+            step_result = StepResult(
+                step=index,
+                description=step,
+                status="failed",
+                error=str(e),
             )
+
+            results.append(step_result.to_dict())
 
             print(f"✗ Step {index} failed")
             print(f"  Error: {e}\n")
