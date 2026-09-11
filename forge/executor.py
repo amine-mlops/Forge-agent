@@ -33,6 +33,248 @@ def parse_plan(plan: str) -> list[str]:
     return steps
 
 
+async def diagnose_and_repair(
+    agent,
+    original_request: str,
+    step: str,
+    error: str,
+) -> dict:
+    """
+    Ask the Forge agent to diagnose and repair a failed execution step.
+    """
+
+    recovery_prompt = f"""
+You are Forge's failure recovery component.
+
+A previous execution step failed.
+
+============================================================
+ORIGINAL USER REQUEST
+============================================================
+
+{original_request}
+
+============================================================
+FAILED STEP
+============================================================
+
+{step}
+
+============================================================
+ERROR
+============================================================
+
+{error}
+
+============================================================
+RECOVERY OBJECTIVE
+============================================================
+
+Diagnose the actual cause of the failure and repair it.
+
+You MUST:
+
+1. Inspect the relevant files in agent_workspace.
+2. Determine the actual root cause of the failure.
+3. Modify the necessary files to fix the problem.
+4. Verify the fix by running appropriate tests or commands.
+5. Do not modify files outside agent_workspace.
+6. Do not merely explain what should be changed.
+7. Actually perform the repair.
+8. Do not claim success unless you verified the fix.
+
+If the failure is caused by an incorrect implementation, fix the
+implementation rather than simply hiding or suppressing the error.
+
+When finished, report:
+
+- Root cause
+- Files modified
+- Changes made
+- Verification performed
+- Whether the repair succeeded
+"""
+
+    try:
+        result = await agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": recovery_prompt,
+                    }
+                ]
+            }
+        )
+
+        response = result["messages"][-1].content
+
+        return {
+            "status": "success",
+            "output": response,
+            "error": None,
+        }
+
+    except Exception as e:
+
+        return {
+            "status": "failed",
+            "output": "",
+            "error": str(e),
+        }
+
+
+async def execute_step(
+    agent,
+    original_request: str,
+    step_number: int,
+    step: str,
+) -> dict:
+    """
+    Execute a single Forge plan step once.
+    """
+
+    execution_prompt = f"""
+You are executing Step {step_number} of a larger Forge task.
+
+Original user request:
+{original_request}
+
+Current plan step:
+{step}
+
+Instructions:
+
+- Focus primarily on this step.
+- Use available tools when necessary.
+- Actually perform the required work.
+- Inspect existing files before modifying them when appropriate.
+- Do not pretend work was completed.
+- Verify your work when possible.
+- If you encounter an error, do not hide it.
+"""
+
+    try:
+        result = await agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": execution_prompt,
+                    }
+                ]
+            }
+        )
+
+        response = result["messages"][-1].content
+
+        return StepResult(
+            step=step_number,
+            description=step,
+            status="success",
+            output=response,
+        ).to_dict()
+
+    except Exception as e:
+
+        return StepResult(
+            step=step_number,
+            description=step,
+            status="failed",
+            error=str(e),
+        ).to_dict()
+
+
+MAX_RETRIES = 3
+
+
+async def execute_step_with_recovery(
+    agent,
+    original_request: str,
+    step_number: int,
+    step: str,
+) -> dict:
+    """
+    Execute a step with automatic diagnosis, repair, and retry.
+
+    The initial execution is followed by up to MAX_RETRIES
+    recovery attempts.
+    """
+
+    for attempt in range(1, MAX_RETRIES + 2):
+
+        print(
+            f"  Attempt {attempt}/{MAX_RETRIES + 1}"
+        )
+
+        result = await execute_step(
+            agent=agent,
+            original_request=original_request,
+            step_number=step_number,
+            step=step,
+        )
+
+        if result["status"] == "success":
+
+            print(
+                f"  ✓ Attempt {attempt} succeeded"
+            )
+
+            return result
+
+        error = result["error"]
+
+        print(
+            f"  ✗ Attempt {attempt} failed"
+        )
+        print(
+            f"    Error: {error}"
+        )
+
+        # No recovery after the final attempt.
+        if attempt > MAX_RETRIES:
+            break
+
+        print(
+            "  → Diagnosing and repairing..."
+        )
+
+        recovery = await diagnose_and_repair(
+            agent=agent,
+            original_request=original_request,
+            step=step,
+            error=error,
+        )
+
+        if recovery["status"] == "success":
+
+            print(
+                "  ✓ Repair completed"
+            )
+            print(
+                "  → Retrying step..."
+            )
+
+        else:
+
+            print(
+                "  ✗ Repair failed"
+            )
+            print(
+                f"    Error: {recovery['error']}"
+            )
+
+    return StepResult(
+        step=step_number,
+        description=step,
+        status="failed",
+        error=(
+            f"Step failed after "
+            f"{MAX_RETRIES + 1} execution attempts."
+        ),
+    ).to_dict()
+
+
 async def execute_plan(
     agent,
     plan: str,
@@ -85,54 +327,17 @@ async def execute_plan(
             status="running",
         )
 
-        execution_prompt = f"""
-You are executing Step {index} of a larger Forge task.
+        # Execute the step with automatic recovery.
+        step_result = await execute_step_with_recovery(
+            agent=agent,
+            original_request=original_request,
+            step_number=index,
+            step=step,
+        )
 
-Original user request:
+        results.append(step_result)
 
-{original_request}
-
-Current plan step:
-
-{step}
-
-Instructions:
-
-- Focus primarily on this step.
-- Use available tools when necessary.
-- Actually perform the required work.
-- Inspect existing files before modifying them when appropriate.
-- Do not pretend work was completed.
-- Verify your work when possible.
-- If this step depends on previous work, inspect the current workspace.
-- If you encounter an error, diagnose and fix it before finishing.
-
-When you finish this step, briefly report what you actually completed
-and what you verified.
-"""
-
-        try:
-            result = await agent.ainvoke(
-                {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": execution_prompt,
-                        }
-                    ]
-                }
-            )
-
-            response = result["messages"][-1].content
-
-            step_result = StepResult(
-                step=index,
-                description=step,
-                status="success",
-                output=response,
-            )
-
-            results.append(step_result.to_dict())
+        if step_result["status"] == "success":
 
             completed_steps.append(index)
 
@@ -147,9 +352,9 @@ and what you verified.
 
             print(f"✓ Step {index} completed\n")
 
-        except Exception as e:
+        else:
 
-            # Save the exact point where execution stopped.
+            # Recovery failed after all retry attempts.
             save_state(
                 original_request=original_request,
                 plan=plan,
@@ -158,22 +363,14 @@ and what you verified.
                 status="paused",
             )
 
-            step_result = StepResult(
-                step=index,
-                description=step,
-                status="failed",
-                error=str(e),
-            )
-
-            results.append(step_result.to_dict())
-
-            print(f"✗ Step {index} failed")
-            print(f"  Error: {e}\n")
+            print(f"✗ Step {index} failed after recovery attempts")
+            print(f"  Error: {step_result['error']}\n")
 
             break
 
     # If every step completed, mark the task as completed.
     if len(completed_steps) == len(steps):
+
         save_state(
             original_request=original_request,
             plan=plan,

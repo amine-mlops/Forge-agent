@@ -34,10 +34,9 @@ async def main():
     result = results[0]
 
     assert result["step"] == 1
-    assert result["description"] == "Create project structure"
     assert result["status"] == "failed"
-    assert result["output"] == ""
-    assert result["error"] == "Simulated execution failure"
+    assert result["description"] == "Create project structure"
+    assert result["error"] == "Step failed after 4 execution attempts."
 
     # Step 1 must NOT be marked as completed.
     state = load_state()
