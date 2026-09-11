@@ -1,98 +1,131 @@
 import asyncio
 
+from rich.console import Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
 from forge.agent import create_forge_agent
 from forge.planner import create_planner, generate_plan
 from forge.executor import execute_plan
 from forge.state import load_state, clear_state
 from tools.browser import browser_manager
 
-
-# FORGE CLI
-
-BANNER = r"""
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║       ███████╗ ██████╗ ██████╗  ██████╗ ███████╗         ║
-║       ██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝         ║
-║       █████╗  ██║   ██║██████╔╝██║  ███╗█████╗           ║
-║       ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝           ║
-║       ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗         ║
-║       ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝          ║
-║                                                          ║
-║             AI Coding & Research Agent                   ║
-║                         Forge V2                         ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
+from forge.ui import (
+    console,
+    show_banner,
+    show_system_info,
+    print_info,
+    print_success,
+    print_warning,
+    print_error,
+)
 
 
-def print_banner():
-    print(BANNER)
-    print("  Model: GLM 5.3 Flash")
-    print("  Workspace: agent_workspace")
-    print("  Status: ● Ready")
-    print()
-    print("  Type /help for commands.")
-    print("  Type /exit to quit.")
-    print()
-
+# Forge CLI Helpers
 
 def print_help():
-    print("""
-Forge commands:
+    """Display available Forge commands."""
 
-  /help       Show this help message
-  /status     Show Forge status
-  /tools      Show available tools
-  /resume     Resume the last paused task
-  /clear      Clear the terminal
-  /exit       Exit Forge
+    table = Table(
+        title="Forge Commands",
+        title_style="forge",
+        border_style="cyan",
+        show_header=True,
+        header_style="bold white",
+    )
 
-Anything else is sent to the Forge agent.
-""")
+    table.add_column("Command", style="command", width=12)
+    table.add_column("Description", style="info")
+
+    table.add_row("/help", "Show available commands")
+    table.add_row("/status", "Show Forge system status")
+    table.add_row("/tools", "Show available Forge tools")
+    table.add_row("/resume", "Resume the last paused task")
+    table.add_row("/clear", "Clear the terminal")
+    table.add_row("/exit", "Exit Forge")
+
+    console.print()
+    console.print(table)
+    console.print()
+
+    console.print(
+        "[muted]Anything else is sent to the Forge agent.[/muted]"
+    )
+    console.print()
 
 
 def print_status():
-    print("""
-Forge V2 Status
-────────────────────────────
-Model:      GLM 5.3 Flash
-Workspace:  agent_workspace
-Browser:    Playwright + Brave
-Terminal:   Bubblewrap sandbox
-Web:        Tavily
-Planner:    Enabled
-Executor:   Enabled
-State:      Enabled
-Resume:     Enabled
-Status:     ● Ready
-""")
+    """Display Forge system status."""
+
+    table = Table(
+        title="Forge Status",
+        title_style="forge",
+        border_style="cyan",
+        show_header=False,
+    )
+
+    table.add_column("Component", style="muted")
+    table.add_column("Status", style="info")
+
+    table.add_row("Model", "GLM 5.3 Flash")
+    table.add_row("Workspace", "agent_workspace")
+    table.add_row("Browser", "Playwright + Brave")
+    table.add_row("Terminal", "Bubblewrap sandbox")
+    table.add_row("Web", "Tavily")
+    table.add_row("Planner", "[success]Enabled[/success]")
+    table.add_row("Executor", "[success]Enabled[/success]")
+    table.add_row("State", "[success]Enabled[/success]")
+    table.add_row("Resume", "[success]Enabled[/success]")
+    table.add_row("Status", "[success]● Ready[/success]")
+
+    console.print()
+    console.print(table)
+    console.print()
 
 
 def print_tools():
-    print("""
-Forge Tools
-────────────────────────────
-• create_file
-• read_file
-• list_file
-• edit_file
-• web search
-• browser_open
-• browser_read
-• browser_click
-• browser_type
-• browser_screenshot
-• terminal_run
-""")
+    """Display available Forge tools."""
+
+    tools = [
+        ("create_file", "Create a file"),
+        ("read_file", "Read a file"),
+        ("list_file", "List workspace files"),
+        ("edit_file", "Edit a file"),
+        ("search", "Search the web with Tavily"),
+        ("browser_open", "Open a webpage"),
+        ("browser_read", "Read webpage content"),
+        ("browser_click", "Click on a webpage element"),
+        ("browser_type", "Type into a webpage"),
+        ("browser_screenshot", "Take a browser screenshot"),
+        ("terminal_run", "Run commands in the sandbox"),
+    ]
+
+    table = Table(
+        title="Forge Tools",
+        title_style="forge",
+        border_style="cyan",
+        show_header=True,
+        header_style="bold white",
+    )
+
+    table.add_column("Tool", style="command")
+    table.add_column("Purpose", style="info")
+
+    for name, description in tools:
+        table.add_row(name, description)
+
+    console.print()
+    console.print(table)
+    console.print()
 
 
-def print_plan(plan):
+def print_plan(plan: str):
     """
     Display the planner output in the Forge CLI.
     """
 
-    print("┌─ Forge Plan ────────────────────────────────┐")
+    lines = []
 
     for line in plan.splitlines():
 
@@ -100,10 +133,114 @@ def print_plan(plan):
             continue
 
         if line.strip():
-            print(f"│ {line:<44} │")
+            lines.append(
+                Text(line, style="step")
+            )
 
-    print("└──────────────────────────────────────────────┘")
-    print()
+    if not lines:
+        lines.append(
+            Text("No execution steps returned.", style="warning")
+        )
+
+    content = Group(*lines)
+
+    panel = Panel(
+        content,
+        title="Forge Plan",
+        title_align="left",
+        border_style="cyan",
+        padding=(1, 2),
+    )
+
+    console.print()
+    console.print(panel)
+    console.print()
+
+
+def print_execution_result(result: dict):
+    """Display a single execution result."""
+
+    step = result.get("step", "?")
+    description = result.get("description", "Unknown step")
+    status = result.get("status", "unknown")
+    output = result.get("output", "")
+    error = result.get("error")
+
+    if status == "success":
+
+        console.print(
+            f"[success]✓[/success] "
+            f"[bold]Step {step} completed[/bold]"
+        )
+
+        if output:
+            console.print(
+                Panel(
+                    output,
+                    title=f"Step {step} Output",
+                    border_style="green",
+                    padding=(1, 2),
+                )
+            )
+
+    else:
+
+        console.print(
+            f"[error]✗[/error] "
+            f"[bold]Step {step} failed[/bold]"
+        )
+
+        if error:
+            console.print(
+                Panel(
+                    error,
+                    title=f"Step {step} Error",
+                    border_style="red",
+                    padding=(1, 2),
+                )
+            )
+
+
+def print_execution_summary(results: list[dict]):
+    """Display the final execution summary."""
+
+    if not results:
+        print_warning("No execution results returned.")
+        return
+
+    table = Table(
+        title="Forge Execution Summary",
+        title_style="forge",
+        border_style="cyan",
+        show_header=True,
+        header_style="bold white",
+    )
+
+    table.add_column("Step", justify="center", style="command")
+    table.add_column("Description", style="info")
+    table.add_column("Status", justify="center")
+
+    for result in results:
+
+        status = result.get("status")
+
+        if status == "success":
+            status_display = "[success]✓ Success[/success]"
+        else:
+            status_display = "[error]✗ Failed[/error]"
+
+        table.add_row(
+            str(result.get("step", "?")),
+            result.get("description", "Unknown"),
+            status_display,
+        )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+# Agent Execution
 
 
 async def run_agent(agent, user_input):
@@ -114,6 +251,7 @@ async def run_agent(agent, user_input):
     """
 
     try:
+
         result = await agent.ainvoke(
             {
                 "messages": [
@@ -128,8 +266,11 @@ async def run_agent(agent, user_input):
         return result["messages"][-1].content
 
     except Exception as e:
+
         return f"Forge error: {e}"
 
+
+# Resume
 
 async def resume_task(agent):
     """
@@ -139,36 +280,86 @@ async def resume_task(agent):
     state = load_state()
 
     if state is None:
-        print("\nNo saved Forge task found.\n")
+
+        print_warning("No saved Forge task found.")
         return
 
     status = state.get("status")
 
     if status != "paused":
+
         if status == "completed":
-            print("\nThe saved task is already completed.\n")
+            print_info("The saved task is already completed.")
+
         else:
-            print(f"\nCannot resume task with status: {status}\n")
+            print_warning(
+                f"Cannot resume task with status: {status}"
+            )
+
         return
 
     original_request = state.get("original_request")
     plan = state.get("plan")
-    completed_steps = state.get("completed_steps", [])
+    completed_steps = state.get(
+        "completed_steps",
+        [],
+    )
     current_step = state.get("current_step")
 
     if not original_request or not plan:
-        print("\nSaved Forge state is incomplete. Cannot resume.\n")
+
+        print_error(
+            "Saved Forge state is incomplete. Cannot resume."
+        )
+
         return
 
-    print("\nResuming paused Forge task...\n")
+    console.print()
 
-    print(f"Current step: {current_step}")
-    print(f"Completed steps: {completed_steps}")
-    print()
+    console.print(
+        Panel(
+            Text(
+                "Resuming paused Forge task...",
+                style="bold white",
+            ),
+            border_style="cyan",
+        )
+    )
+
+    console.print()
+
+    info_table = Table(
+        show_header=False,
+        box=None,
+    )
+
+    info_table.add_column(
+        "Property",
+        style="muted",
+    )
+
+    info_table.add_column(
+        "Value",
+        style="info",
+    )
+
+    info_table.add_row(
+        "Current step",
+        str(current_step),
+    )
+
+    info_table.add_row(
+        "Completed steps",
+        str(completed_steps),
+    )
+
+    console.print(info_table)
+    console.print()
 
     print_plan(plan)
 
-    print("Continuing execution...\n")
+    print_info("Continuing execution...")
+    console.print()
 
     results = await execute_plan(
         agent=agent,
@@ -177,161 +368,205 @@ async def resume_task(agent):
         completed_steps=completed_steps,
     )
 
-    print("\nForge resume summary")
-    print("────────────────────────────")
-
-    for result in results:
-
-        print(
-            f"\nStep {result['step']}: "
-            f"{result['description']}"
-        )
-
-        print(result["result"])
+    print_execution_summary(results)
 
     # Check final state after execution.
     final_state = load_state()
 
     if final_state and final_state.get("status") == "completed":
-        print("\n✓ Task completed successfully.")
+
+        print_success("Task completed successfully.")
+
         clear_state()
-        print("✓ Saved state cleared.")
+
+        print_success("Saved state cleared.")
 
     else:
-        print("\n⚠ Task is still paused.")
-        print("The saved state was preserved for another /resume.")
 
-    print()
+        print_warning(
+            "Task is still paused."
+        )
 
+        print_info(
+            "The saved state was preserved for another /resume."
+        )
+
+    console.print()
+
+
+# Main CLI
 
 async def cli():
 
-    # Create Forge components
+    # Create Forge components.
     agent = create_forge_agent()
     planner = create_planner()
 
-    print_banner()
+    # Initial Forge interface.
+    show_banner()
+    show_system_info()
 
     try:
 
         while True:
 
             try:
-                user_input = input("forge ❯ ").strip()
+
+                user_input = console.input(
+                    "[forge]forge[/forge] [muted]❯[/muted] "
+                ).strip()
 
             except (KeyboardInterrupt, EOFError):
-                print("\n")
+
+                console.print()
+                print_info("Exiting Forge...")
                 break
 
             if not user_input:
                 continue
 
-
+            
             # CLI COMMANDS
-
+            
             if user_input == "/exit":
-                print("\nGoodbye 👋")
+
+                console.print()
+                print_success("Goodbye.")
                 break
 
             if user_input == "/help":
+
                 print_help()
                 continue
 
             if user_input == "/status":
+
                 print_status()
                 continue
 
             if user_input == "/tools":
+
                 print_tools()
                 continue
 
             if user_input == "/resume":
+
                 try:
+
                     await resume_task(agent)
+
                 except Exception as e:
-                    print(f"\nForge resume error: {e}\n")
+
+                    print_error(
+                        f"Forge resume error: {e}"
+                    )
+
                 continue
 
             if user_input == "/clear":
-                print("\033[2J\033[H", end="")
-                print_banner()
+
+                console.clear()
+
+                show_banner()
+                show_system_info()
+
                 continue
 
-
+            
             # PLANNING + EXECUTION
+            
+            console.print()
 
-            print("\nForge is working...\n")
+            console.print(
+                Panel(
+                    Text(
+                        "Forge is working...",
+                        style="bold white",
+                    ),
+                    border_style="cyan",
+                )
+            )
+
+            console.print()
 
             try:
 
+                
                 # Step 1: Generate plan
-
+                
                 plan = await generate_plan(
                     planner,
                     user_input,
                 )
 
-
+                
                 # Simple task
-
+                
                 if plan == "SIMPLE":
 
-                    print("Simple task detected.\n")
+                    print_info(
+                        "Simple task detected."
+                    )
+
+                    console.print()
 
                     response = await run_agent(
                         agent,
                         user_input,
                     )
 
-                    print(response)
-                    print()
+                    console.print(
+                        Panel(
+                            response,
+                            title="Forge",
+                            border_style="cyan",
+                            padding=(1, 2),
+                        )
+                    )
 
+                    console.print()
 
+            
                 # Complex task
-
+                
                 else:
 
-                    # Display generated plan
+                    # Display generated plan.
                     print_plan(plan)
 
-                    print("Executing plan...\n")
+                    print_info(
+                        "Executing plan..."
+                    )
 
-                    # Execute every plan step
+                    console.print()
+
+                    # Execute every plan step.
                     results = await execute_plan(
                         agent,
                         plan,
                         user_input,
                     )
 
-                    # Execution summary
-
-                    print("\nForge execution summary")
-                    print("────────────────────────────")
-
-                    for result in results:
-
-                        print(
-                            f"\nStep {result['step']}: "
-                            f"{result['description']}"
-                        )
-
-                        print(result["result"])
-
-                    print()
+                    # Execution summary.
+                    print_execution_summary(results)
 
             except Exception as e:
 
-                print(f"Forge error: {e}")
-                print()
+                print_error(
+                    f"Forge error: {e}"
+                )
+
+                console.print()
 
     finally:
 
-        # Always close the persistent browser
+        # Always close the persistent browser.
         await browser_manager.close()
 
 
+# Entry Point
+
 if __name__ == "__main__":
     asyncio.run(cli())
-
 
 

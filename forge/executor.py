@@ -1,37 +1,72 @@
 import re
+
 from dataclasses import asdict, dataclass
 
 from forge.state import save_state
 
+from forge.ui import (
+    show_step_header,
+    show_attempt,
+    show_step_success,
+    show_step_failure,
+    show_recovery_start,
+    show_recovery_success,
+    show_recovery_failure,
+    show_task_success,
+    show_task_paused,
+)
+
+
+# ============================================================
+# Step Result
+# ============================================================
 
 @dataclass
 class StepResult:
+
     step: int
+
     description: str
+
     status: str
+
     output: str = ""
+
     error: str | None = None
 
     def to_dict(self) -> dict:
+
         return asdict(self)
 
 
+# ============================================================
+# Plan Parser
+# ============================================================
+
 def parse_plan(plan: str) -> list[str]:
+
     if not isinstance(plan, str):
+
         return []
 
     steps = []
 
     for line in plan.splitlines():
+
         line = line.strip()
 
         match = re.match(r"^\d+\.\s+(.*)", line)
 
         if match:
+
             steps.append(match.group(1).strip())
 
     return steps
 
+
+# ============================================================
+# Failure Diagnosis & Repair
+# ============================================================
 
 async def diagnose_and_repair(
     agent,
@@ -39,35 +74,45 @@ async def diagnose_and_repair(
     step: str,
     error: str,
 ) -> dict:
+
     """
     Ask the Forge agent to diagnose and repair a failed execution step.
     """
 
     recovery_prompt = f"""
+
 You are Forge's failure recovery component.
 
 A previous execution step failed.
 
 ============================================================
+
 ORIGINAL USER REQUEST
+
 ============================================================
 
 {original_request}
 
 ============================================================
+
 FAILED STEP
+
 ============================================================
 
 {step}
 
 ============================================================
+
 ERROR
+
 ============================================================
 
 {error}
 
 ============================================================
+
 RECOVERY OBJECTIVE
+
 ============================================================
 
 Diagnose the actual cause of the failure and repair it.
@@ -93,9 +138,11 @@ When finished, report:
 - Changes made
 - Verification performed
 - Whether the repair succeeded
+
 """
 
     try:
+
         result = await agent.ainvoke(
             {
                 "messages": [
@@ -124,23 +171,31 @@ When finished, report:
         }
 
 
+# ============================================================
+# Single Step Execution
+# ============================================================
+
 async def execute_step(
     agent,
     original_request: str,
     step_number: int,
     step: str,
 ) -> dict:
+
     """
     Execute a single Forge plan step once.
     """
 
     execution_prompt = f"""
+
 You are executing Step {step_number} of a larger Forge task.
 
 Original user request:
+
 {original_request}
 
 Current plan step:
+
 {step}
 
 Instructions:
@@ -152,9 +207,11 @@ Instructions:
 - Do not pretend work was completed.
 - Verify your work when possible.
 - If you encounter an error, do not hide it.
+
 """
 
     try:
+
         result = await agent.ainvoke(
             {
                 "messages": [
@@ -185,6 +242,10 @@ Instructions:
         ).to_dict()
 
 
+# ============================================================
+# Automatic Recovery
+# ============================================================
+
 MAX_RETRIES = 3
 
 
@@ -194,6 +255,7 @@ async def execute_step_with_recovery(
     step_number: int,
     step: str,
 ) -> dict:
+
     """
     Execute a step with automatic diagnosis, repair, and retry.
 
@@ -201,10 +263,13 @@ async def execute_step_with_recovery(
     recovery attempts.
     """
 
-    for attempt in range(1, MAX_RETRIES + 2):
+    max_attempts = MAX_RETRIES + 1
 
-        print(
-            f"  Attempt {attempt}/{MAX_RETRIES + 1}"
+    for attempt in range(1, max_attempts + 1):
+
+        show_attempt(
+            attempt=attempt,
+            max_attempts=max_attempts,
         )
 
         result = await execute_step(
@@ -216,28 +281,23 @@ async def execute_step_with_recovery(
 
         if result["status"] == "success":
 
-            print(
-                f"  ✓ Attempt {attempt} succeeded"
-            )
+            show_step_success(step_number)
 
             return result
 
         error = result["error"]
 
-        print(
-            f"  ✗ Attempt {attempt} failed"
-        )
-        print(
-            f"    Error: {error}"
+        show_step_failure(
+            step_number=step_number,
+            error=error,
         )
 
         # No recovery after the final attempt.
         if attempt > MAX_RETRIES:
+
             break
 
-        print(
-            "  → Diagnosing and repairing..."
-        )
+        show_recovery_start()
 
         recovery = await diagnose_and_repair(
             agent=agent,
@@ -248,20 +308,12 @@ async def execute_step_with_recovery(
 
         if recovery["status"] == "success":
 
-            print(
-                "  ✓ Repair completed"
-            )
-            print(
-                "  → Retrying step..."
-            )
+            show_recovery_success()
 
         else:
 
-            print(
-                "  ✗ Repair failed"
-            )
-            print(
-                f"    Error: {recovery['error']}"
+            show_recovery_failure(
+                error=recovery["error"],
             )
 
     return StepResult(
@@ -270,10 +322,14 @@ async def execute_step_with_recovery(
         status="failed",
         error=(
             f"Step failed after "
-            f"{MAX_RETRIES + 1} execution attempts."
+            f"{max_attempts} execution attempts."
         ),
     ).to_dict()
 
+
+# ============================================================
+# Plan Execution
+# ============================================================
 
 async def execute_plan(
     agent,
@@ -281,9 +337,11 @@ async def execute_plan(
     original_request: str,
     completed_steps: list[int] | None = None,
 ):
+
     steps = parse_plan(plan)
 
     if not steps:
+
         save_state(
             original_request=original_request,
             plan=plan,
@@ -297,26 +355,36 @@ async def execute_plan(
                 step=0,
                 description="Plan parsing",
                 status="failed",
-                error="The planner did not return a valid numbered execution plan.",
+                error=(
+                    "The planner did not return a valid "
+                    "numbered execution plan."
+                ),
             ).to_dict()
         ]
 
     if completed_steps is None:
+
         completed_steps = []
 
     results = []
+
+    total_steps = len(steps)
 
     for index, step in enumerate(steps, start=1):
 
         # Skip steps that were already completed.
         if index in completed_steps:
-            print(f"✓ Step {index} already completed, skipping")
+
+            show_step_success(index)
+
             continue
 
-        print(f"┌─ Step {index}/{len(steps)} ─────────────────────────")
-        print(f"│ {step}")
-        print("└────────────────────────────────────────────")
-        print()
+        # Display step header.
+        show_step_header(
+            step_number=index,
+            total_steps=total_steps,
+            description=step,
+        )
 
         # Save state before starting the step.
         save_state(
@@ -350,8 +418,6 @@ async def execute_plan(
                 status="running",
             )
 
-            print(f"✓ Step {index} completed\n")
-
         else:
 
             # Recovery failed after all retry attempts.
@@ -363,8 +429,7 @@ async def execute_plan(
                 status="paused",
             )
 
-            print(f"✗ Step {index} failed after recovery attempts")
-            print(f"  Error: {step_result['error']}\n")
+            show_task_paused()
 
             break
 
@@ -378,5 +443,7 @@ async def execute_plan(
             current_step=None,
             status="completed",
         )
+
+        show_task_success()
 
     return results
