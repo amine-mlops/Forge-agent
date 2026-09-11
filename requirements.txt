@@ -3,3 +3,4 @@ langchain-openrouter
 langchain-tavily
 python-dotenv
 playwright
+rich==15.0.0
